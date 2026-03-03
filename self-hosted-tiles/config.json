@@ -1,0 +1,14 @@
+{
+  "options": {
+    "paths": {
+      "root": "/data"
+    }
+  },
+  "data": {
+    "india": {
+      "mbtiles": "india.mbtiles"
+    }
+  }
+}
+
+
