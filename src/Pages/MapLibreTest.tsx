@@ -33,7 +33,7 @@ export default function MapLibreTest() {
       container: mapRef.current,
       center: [78.9629, 20.5937],
       zoom: 5,
-      style: "http://98.87.60.135:8080/styles/basic-preview/style.json",
+      style: `${import.meta.env.VITE_TILE_SERVER}/styles/basic-preview/style.json`,
       attributionControl: false,
     });
 
