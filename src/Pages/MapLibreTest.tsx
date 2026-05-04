@@ -37,7 +37,6 @@ interface RouteInfo {
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
-// Plain Unicode arrows — no emoji variation selectors
 const maneuverIcon = (type: string, modifier?: string): string => {
   if (type === "depart")  return "↑";
   if (type === "arrive")  return "●";
@@ -126,19 +125,20 @@ export default function MapLibreTest() {
   const ROUTE_SRC  = "route-line";
   const ROUTE_CASE = "route-casing";
 
-  const [query, setQuery]             = useState("");
-  const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
-  const [routeInfo, setRouteInfo]     = useState<RouteInfo | null>(null);
+  const [query, setQuery]               = useState("");
+  const [suggestions, setSuggestions]   = useState<Suggestion[]>([]);
+  const [routeInfo, setRouteInfo]       = useState<RouteInfo | null>(null);
   const [isNavigating, setIsNavigating] = useState(false);
-  const [stepIndex, setStepIndex]     = useState(0);
-  const [distToTurn, setDistToTurn]   = useState<number | null>(null);
-  const [arrived, setArrived]         = useState(false);
+  const [stepIndex, setStepIndex]       = useState(0);
+  const [distToTurn, setDistToTurn]     = useState<number | null>(null);
+  const [arrived, setArrived]           = useState(false);
+  const [loadingPOI, setLoadingPOI]     = useState(false);
+  const [loadingRoute, setLoadingRoute] = useState(false);
 
   // Inject all component CSS once
   useEffect(() => {
     const s = document.createElement("style");
     s.textContent = `
-      /* GPS dot */
       .p-userdot { position:relative; width:22px; height:22px; }
       .p-dot {
         width:22px; height:22px; border-radius:50%;
@@ -156,38 +156,21 @@ export default function MapLibreTest() {
         0%   { transform:scale(.4); opacity:1; }
         100% { transform:scale(2);  opacity:0; }
       }
-
-      /* Search + buttons container */
       .p-controls {
-        position:absolute; top:12px;
-        left:12px; right:12px;
-        z-index:10;
-        display:flex; flex-direction:column; gap:8px;
+        position:absolute; top:12px; left:12px; right:12px;
+        z-index:10; display:flex; flex-direction:column; gap:8px;
       }
       @media (min-width:520px) {
-        .p-controls {
-          left:50%; right:auto;
-          transform:translateX(-50%);
-          width:360px;
-        }
+        .p-controls { left:50%; right:auto; transform:translateX(-50%); width:360px; }
       }
-
-      /* Search input */
       .p-input {
-        width:100%; padding:12px 16px;
-        border-radius:24px; border:none;
-        box-shadow:0 2px 10px rgba(0,0,0,0.18);
-        font-size:16px; /* 16px prevents iOS zoom */
-        box-sizing:border-box;
-        outline:none;
-        font-family:inherit;
+        width:100%; padding:12px 16px; border-radius:24px; border:none;
+        box-shadow:0 2px 10px rgba(0,0,0,0.18); font-size:16px;
+        box-sizing:border-box; outline:none; font-family:inherit;
       }
-
-      /* Suggestion list */
       .p-suggestions {
         background:#fff; border-radius:14px; margin-top:2px;
-        max-height:200px; overflow-y:auto;
-        box-shadow:0 4px 12px rgba(0,0,0,0.15);
+        max-height:200px; overflow-y:auto; box-shadow:0 4px 12px rgba(0,0,0,0.15);
       }
       .p-suggestion-item {
         padding:11px 16px; cursor:pointer; font-size:14px;
@@ -196,50 +179,42 @@ export default function MapLibreTest() {
       }
       .p-suggestion-item:last-child { border-bottom:none; }
       .p-suggestion-item:active { background:#f5f5f5; }
-
-      /* Action buttons row */
-      .p-btns {
-        display:flex; gap:8px;
-      }
+      .p-btns { display:flex; gap:8px; }
       .p-btn {
-        flex:1; padding:12px 10px;
-        border-radius:24px; border:none;
-        background:#1a1a1a; color:#fff;
-        cursor:pointer; font-size:14px; font-weight:600;
-        box-shadow:0 2px 8px rgba(0,0,0,0.2);
-        min-height:44px; /* touch target */
-        font-family:inherit;
+        flex:1; padding:12px 10px; border-radius:24px; border:none;
+        background:#1a1a1a; color:#fff; cursor:pointer;
+        font-size:14px; font-weight:600; box-shadow:0 2px 8px rgba(0,0,0,0.2);
+        min-height:44px; font-family:inherit; transition:background .15s;
         -webkit-tap-highlight-color:transparent;
       }
-      .p-btn:active { background:#333; }
-
-      /* Navigation top banner */
+      .p-btn:active:not(:disabled) { background:#333; }
+      .p-btn:disabled { background:#888; cursor:not-allowed; }
+      .p-spinner {
+        display:inline-block; width:14px; height:14px;
+        border:2px solid rgba(255,255,255,0.4);
+        border-top-color:#fff; border-radius:50%;
+        animation:p-spin .7s linear infinite;
+        vertical-align:middle; margin-right:6px;
+      }
+      @keyframes p-spin { to { transform:rotate(360deg); } }
       .p-nav-banner {
         position:absolute; top:0; left:0; right:0; z-index:30;
         background:#1a73e8; color:#fff;
-        padding:env(safe-area-inset-top, 0) 0 0;
+        padding:env(safe-area-inset-top,0) 0 0;
         box-shadow:0 4px 16px rgba(0,0,0,0.25);
       }
-      .p-nav-inner {
-        padding:14px 16px;
-        display:flex; align-items:center; gap:12px;
-      }
-
-      /* Direction icon badge */
+      .p-nav-inner { padding:14px 16px; display:flex; align-items:center; gap:12px; }
       .p-dir-icon {
         width:40px; height:40px; border-radius:10px;
         background:rgba(255,255,255,0.2);
         display:flex; align-items:center; justify-content:center;
-        font-size:20px; font-weight:700; flex-shrink:0; color:#fff;
-        line-height:1;
+        font-size:20px; font-weight:700; flex-shrink:0; color:#fff; line-height:1;
       }
       .p-dir-icon-sm {
         width:34px; height:34px; border-radius:8px; flex-shrink:0;
         display:flex; align-items:center; justify-content:center;
         font-size:17px; font-weight:700; line-height:1;
       }
-
-      /* End nav button */
       .p-end-btn {
         background:rgba(255,255,255,0.2); border:none; border-radius:10px;
         color:#fff; padding:8px 14px; cursor:pointer;
@@ -248,18 +223,15 @@ export default function MapLibreTest() {
         -webkit-tap-highlight-color:transparent;
       }
       .p-end-btn:active { background:rgba(255,255,255,0.35); }
-
-      /* Directions bottom sheet */
       .p-sheet {
         position:absolute; bottom:0; left:0; right:0; z-index:20;
         background:#fff; border-radius:20px 20px 0 0;
         box-shadow:0 -4px 24px rgba(0,0,0,0.12);
         max-height:52vh; display:flex; flex-direction:column;
-        padding-bottom:env(safe-area-inset-bottom, 0);
+        padding-bottom:env(safe-area-inset-bottom,0);
       }
       .p-sheet-header {
-        padding:16px 16px 12px;
-        border-bottom:1px solid #f0f0f0;
+        padding:16px 16px 12px; border-bottom:1px solid #f0f0f0;
         display:flex; align-items:center; justify-content:space-between;
         flex-shrink:0; gap:10px;
       }
@@ -281,29 +253,18 @@ export default function MapLibreTest() {
       .p-close-btn:active { background:#e0e0e0; }
       .p-sheet-steps { overflow-y:auto; padding:4px 0; }
       .p-step {
-        display:flex; align-items:flex-start; gap:12px;
-        padding:11px 16px;
-        border-bottom:1px solid #f8f8f8;
-        border-left:3px solid transparent;
+        display:flex; align-items:flex-start; gap:12px; padding:11px 16px;
+        border-bottom:1px solid #f8f8f8; border-left:3px solid transparent;
       }
       .p-step:last-child { border-bottom:none; }
-      .p-step.active {
-        background:#e8f0fe;
-        border-left-color:#1a73e8;
-      }
-
-      /* Arrived modal */
+      .p-step.active { background:#e8f0fe; border-left-color:#1a73e8; }
       .p-arrived-overlay {
-        position:absolute; inset:0; z-index:50;
-        background:rgba(0,0,0,0.4);
-        display:flex; align-items:center; justify-content:center;
-        padding:24px;
+        position:absolute; inset:0; z-index:50; background:rgba(0,0,0,0.4);
+        display:flex; align-items:center; justify-content:center; padding:24px;
       }
       .p-arrived-card {
-        background:#fff; border-radius:20px;
-        padding:32px 28px; text-align:center;
-        box-shadow:0 12px 48px rgba(0,0,0,0.25);
-        width:100%; max-width:320px;
+        background:#fff; border-radius:20px; padding:32px 28px; text-align:center;
+        box-shadow:0 12px 48px rgba(0,0,0,0.25); width:100%; max-width:320px;
       }
       .p-done-btn {
         margin-top:20px; padding:12px 32px; border-radius:22px;
@@ -318,7 +279,6 @@ export default function MapLibreTest() {
     return () => s.remove();
   }, []);
 
-  // Initialise map
   useEffect(() => {
     if (!mapRef.current) return;
     const map = new maplibregl.Map({
@@ -333,7 +293,6 @@ export default function MapLibreTest() {
     return () => map.remove();
   }, []);
 
-  // Cleanup watchPosition on unmount
   useEffect(() => () => { stopWatch(); }, []);
 
   // ── Helpers ───────────────────────────────────────────────────────────────
@@ -379,57 +338,65 @@ export default function MapLibreTest() {
     startLng: number, startLat: number,
     endLng: number,   endLat: number,
   ): Promise<RouteInfo | null> => {
-    const res  = await fetch(
-      `https://router.project-osrm.org/route/v1/walking/` +
-      `${startLng},${startLat};${endLng},${endLat}` +
-      `?overview=full&geometries=geojson&steps=true`
-    );
-    const data = await res.json();
-    if (!data.routes?.length) { alert("Could not find a walking route."); return null; }
+    setLoadingRoute(true);
+    try {
+      const res  = await fetch(
+        `https://router.project-osrm.org/route/v1/walking/` +
+        `${startLng},${startLat};${endLng},${endLat}` +
+        `?overview=full&geometries=geojson&steps=true`
+      );
+      const data = await res.json();
+      if (!data.routes?.length) { alert("Could not find a walking route."); return null; }
 
-    const route = data.routes[0];
-    const map   = mapInst.current!;
+      const route = data.routes[0];
+      const map   = mapInst.current!;
 
-    if (map.getLayer(ROUTE_SRC))  map.removeLayer(ROUTE_SRC);
-    if (map.getLayer(ROUTE_CASE)) map.removeLayer(ROUTE_CASE);
-    if (map.getSource(ROUTE_SRC)) map.removeSource(ROUTE_SRC);
+      if (map.getLayer(ROUTE_SRC))  map.removeLayer(ROUTE_SRC);
+      if (map.getLayer(ROUTE_CASE)) map.removeLayer(ROUTE_CASE);
+      if (map.getSource(ROUTE_SRC)) map.removeSource(ROUTE_SRC);
 
-    map.addSource(ROUTE_SRC, {
-      type: "geojson",
-      data: { type: "Feature", geometry: route.geometry, properties: {} },
-    });
-    map.addLayer({ id: ROUTE_CASE, type: "line", source: ROUTE_SRC,
-      paint: { "line-color": "#fff", "line-width": 11, "line-opacity": 0.85 } });
-    map.addLayer({ id: ROUTE_SRC, type: "line", source: ROUTE_SRC,
-      paint: { "line-color": "#1a73e8", "line-width": 6 } });
+      map.addSource(ROUTE_SRC, {
+        type: "geojson",
+        data: { type: "Feature", geometry: route.geometry, properties: {} },
+      });
+      map.addLayer({ id: ROUTE_CASE, type: "line", source: ROUTE_SRC,
+        paint: { "line-color": "#fff", "line-width": 11, "line-opacity": 0.85 } });
+      map.addLayer({ id: ROUTE_SRC, type: "line", source: ROUTE_SRC,
+        paint: { "line-color": "#1a73e8", "line-width": 6 } });
 
-    const coords = route.geometry.coordinates as [number, number][];
-    const bounds = coords.reduce(
-      (b, c) => b.extend(c),
-      new maplibregl.LngLatBounds(coords[0], coords[0])
-    );
-    map.fitBounds(bounds, { padding: 90 });
+      const coords = route.geometry.coordinates as [number, number][];
+      const bounds = coords.reduce(
+        (b, c) => b.extend(c),
+        new maplibregl.LngLatBounds(coords[0], coords[0])
+      );
+      map.fitBounds(bounds, { padding: 90 });
 
-    const rawSteps: OsrmStep[] = route.legs[0]?.steps ?? [];
-    osrmSteps.current   = rawSteps;
-    destination.current = { lat: endLat, lng: endLng };
+      const rawSteps: OsrmStep[] = route.legs[0]?.steps ?? [];
+      osrmSteps.current   = rawSteps;
+      destination.current = { lat: endLat, lng: endLng };
 
-    const steps: Step[] = rawSteps.map((s) => ({
-      icon:        maneuverIcon(s.maneuver.type, s.maneuver.modifier),
-      instruction: stepInstruction(s),
-      distance:    fmtDist(s.distance),
-    }));
+      const steps: Step[] = rawSteps.map((s) => ({
+        icon:        maneuverIcon(s.maneuver.type, s.maneuver.modifier),
+        instruction: stepInstruction(s),
+        distance:    fmtDist(s.distance),
+      }));
 
-    const info: RouteInfo = {
-      distance: fmtDist(route.distance),
-      duration: Math.round(route.duration / 60),
-      steps,
-    };
-    setRouteInfo(info);
-    setStepIndex(0);
-    stepIdxRef.current = 0;
-    setArrived(false);
-    return info;
+      const info: RouteInfo = {
+        distance: fmtDist(route.distance),
+        duration: Math.round(route.duration / 60),
+        steps,
+      };
+      setRouteInfo(info);
+      setStepIndex(0);
+      stepIdxRef.current = 0;
+      setArrived(false);
+      return info;
+    } catch {
+      alert("Could not calculate route. Please try again.");
+      return null;
+    } finally {
+      setLoadingRoute(false);
+    }
   };
 
   // ── Navigation ────────────────────────────────────────────────────────────
@@ -530,20 +497,54 @@ export default function MapLibreTest() {
     poiMarkers.current.forEach((m) => m.remove());
     poiMarkers.current = [];
     clearRoute();
+    setLoadingPOI(true);
 
     const { lat, lng } = source;
-    const oq = `[out:json];(
-      node["amenity"="toilets"](around:2500,${lat},${lng});
-      node["shop"="mall"](around:2500,${lat},${lng});
-      node["amenity"~"hospital|clinic"](around:2500,${lat},${lng});
-      node["amenity"~"restaurant|cafe|fast_food"](around:2500,${lat},${lng});
-      node["railway"="station"]["station"="subway"](around:2500,${lat},${lng});
-    );out center;`;
+    // nwr = nodes + ways + relations so malls/hospitals mapped as polygons are included
+    const oq = `[out:json][timeout:25];(
+      nwr["amenity"="toilets"](around:2500,${lat},${lng});
+      nwr["amenity"~"hospital|clinic"](around:2500,${lat},${lng});
+      nwr["amenity"~"restaurant|cafe|fast_food"](around:1500,${lat},${lng});
+      nwr["shop"="mall"](around:2500,${lat},${lng});
+      nwr["railway"="station"](around:2500,${lat},${lng});
+    );out center qt;`;
 
-    const res  = await fetch("https://overpass-api.de/api/interpreter", { method: "POST", body: oq });
-    const data = await res.json();
+    // Try fast mirror first, fall back to main server
+    const endpoints = [
+      "https://overpass.kumi.systems/api/interpreter",
+      "https://overpass-api.de/api/interpreter",
+    ];
 
-    (data.elements as OverpassElement[]).forEach((place) => {
+    let data: { elements: OverpassElement[] } | null = null;
+
+    for (const endpoint of endpoints) {
+      try {
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), 20000);
+        const res = await fetch(endpoint, {
+          method: "POST", body: oq, signal: controller.signal,
+        });
+        clearTimeout(timer);
+        data = await res.json();
+        break;
+      } catch (err) {
+        console.warn("Overpass endpoint failed, trying next:", endpoint, err);
+      }
+    }
+
+    setLoadingPOI(false);
+
+    if (!data) {
+      alert("Could not reach map data servers. Check your connection and try again.");
+      return;
+    }
+
+    if (data.elements.length === 0) {
+      alert("No restrooms or facilities found within 2.5 km. Try a busier area.");
+      return;
+    }
+
+    data.elements.forEach((place) => {
       const plat = place.lat ?? place.center?.lat;
       const plng = place.lon ?? place.center?.lon;
       if (!plat || !plng) return;
@@ -617,9 +618,8 @@ export default function MapLibreTest() {
         <div className="p-arrived-overlay">
           <div className="p-arrived-card">
             <div style={{
-              width: 56, height: 56, borderRadius: "50%",
-              background: "#1a73e8", margin: "0 auto",
-              display: "flex", alignItems: "center", justifyContent: "center",
+              width: 56, height: 56, borderRadius: "50%", background: "#1a73e8",
+              margin: "0 auto", display: "flex", alignItems: "center", justifyContent: "center",
             }}>
               <div style={{ color: "#fff", fontSize: 26, fontWeight: 700 }}>●</div>
             </div>
@@ -653,8 +653,14 @@ export default function MapLibreTest() {
             </div>
           )}
           <div className="p-btns">
-            <button className="p-btn" onClick={getUserLocation}>My Location</button>
-            <button className="p-btn" onClick={findRestrooms}>Find Restrooms</button>
+            <button className="p-btn" onClick={getUserLocation} disabled={loadingPOI}>
+              My Location
+            </button>
+            <button className="p-btn" onClick={findRestrooms} disabled={loadingPOI}>
+              {loadingPOI
+                ? <><span className="p-spinner" />Searching...</>
+                : "Find Restrooms"}
+            </button>
           </div>
         </div>
       )}
@@ -672,8 +678,10 @@ export default function MapLibreTest() {
               </div>
             </div>
             <div style={{ display: "flex", gap: 8, alignItems: "center", flexShrink: 0 }}>
-              <button className="p-start-btn" onClick={startNavigation}>
-                Start Walking
+              <button className="p-start-btn" onClick={startNavigation} disabled={loadingRoute}>
+                {loadingRoute
+                  ? <><span className="p-spinner" />Loading...</>
+                  : "Start Walking"}
               </button>
               <button className="p-close-btn" onClick={clearRoute}>×</button>
             </div>
@@ -691,8 +699,7 @@ export default function MapLibreTest() {
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{
                     fontSize: 14, lineHeight: 1.3,
-                    fontWeight: i === stepIndex ? 600 : 400,
-                    color: "#1a1a1a",
+                    fontWeight: i === stepIndex ? 600 : 400, color: "#1a1a1a",
                   }}>
                     {s.instruction}
                   </div>
