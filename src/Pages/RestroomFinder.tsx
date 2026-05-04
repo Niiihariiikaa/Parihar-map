@@ -20,7 +20,7 @@ export default function RestroomFinder() {
       container: mapRef.current,
       center: [78.9629, 20.5937],
       zoom: 5,
-      style: "/india-style.json", // your custom style
+      style: "https://tiles.openfreemap.org/styles/liberty",
     });
 
     map.addControl(new maplibregl.NavigationControl());
