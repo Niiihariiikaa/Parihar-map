@@ -8,7 +8,6 @@ import ContactUs from './Pages/ContactUs';
 import Profile from './Pages/Profile';
 import Navbar from './Components/Navbar';
 import About from './Components/Home/About';
-import RestroomFinder from './Pages/RestroomFinder';
 import { ToastContainer } from 'react-toastify';
 import { CartProvider } from './Components/Ecommerce/context/CartContext';
 import EcommerceHome from './Components/Ecommerce/pages/Home';
